@@ -1,11 +1,12 @@
-import React, { useState, useCallback, useEffect, useMemo } from 'react';
-import { List, AutoSizer } from 'react-virtualized';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { AutoSizer, List } from 'react-virtualized';
 import './App.css';
+import { Header } from "./components/Header/Header";
 
 const rowCount = 1000000; // Number of checkboxes
 const checkboxesPerRow = 30; // Number of checkboxes per row
 const totalRows = Math.ceil(rowCount / checkboxesPerRow); // Total number of rows
-const rowHeight = 40; // Height of each row in pixels
+const rowHeight = 50; // Height of each row in pixels
 
 const App = () => {
   const ws = useMemo(() => new WebSocket(`ws://${window.location.hostname}/ws`), []);
@@ -65,7 +66,7 @@ const App = () => {
   }, [checkboxes, ws]);
 
 
-  const rowRenderer = ({ key, index, style }) => {
+  const rowRenderer = ({key, index, style}) => {
     const start = index * checkboxesPerRow;
     const end = Math.min(start + checkboxesPerRow, rowCount);
     const rowCheckboxes = [];
@@ -115,19 +116,22 @@ const App = () => {
 
   // create a wrapper inside to make it scrollable and inside
   return (
-      <div id={'wrapper'} style={{ height: '100vh', width: "80%", margin: "2rem auto" }} >
-        <AutoSizer>
-          {({ height, width }) => (
-              <List
-                  width={width}
-                  height={height}
-                  rowCount={totalRows}
-                  rowHeight={rowHeight}
-                  rowRenderer={rowRenderer}
-              />
-          )}
-        </AutoSizer>
-      </div>
+      <>
+        <Header>Header</Header>
+        <div id={'wrapper'} style={{height: '100vh', width: "80%", margin: "2rem auto"}}>
+          <AutoSizer>
+            {({height, width}) => (
+                <List
+                    width={width}
+                    height={height}
+                    rowCount={totalRows}
+                    rowHeight={rowHeight}
+                    rowRenderer={rowRenderer}
+                />
+            )}
+          </AutoSizer>
+        </div>
+      </>
   );
 };
 
