@@ -8,8 +8,10 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/bits-and-blooms/bitset"
 	"github.com/gorilla/websocket"
@@ -27,30 +29,40 @@ const TotalBits = 1000000
 type Server struct {
 	bitset      *bitset.BitSet
 	redisClient *redis.Client
-	clients     map[*websocket.Conn]bool
+	clients     map[*websocket.Conn]chan<- string
+	mu          sync.RWMutex
+	updates     chan Update
+}
+
+type Update struct {
+	Index uint
+	Value bool
 }
 
 func NewServer() *Server {
-	// Initialize Redis client
+	redisAddr := os.Getenv("REDIS_URL")
+	if redisAddr == "" {
+		redisAddr = "redis:6379" // Default to the service name if env var is not set
+	}
+
 	redisClient := redis.NewClient(&redis.Options{
-		Addr: "localhost:6379",
+		Addr: redisAddr,
 	})
 
 	return &Server{
 		bitset:      bitset.New(TotalBits),
 		redisClient: redisClient,
-		clients:     make(map[*websocket.Conn]bool),
+		clients:     make(map[*websocket.Conn]chan<- string),
+		updates:     make(chan Update, 100),
 	}
 }
 
 func (s *Server) LoadFromRedis() error {
-	// Load data from Redis into bitset
 	data, err := s.redisClient.Get(context.Background(), "bitset").Bytes()
 	if err != nil && err != redis.Nil {
 		return err
 	}
 	if err == redis.Nil {
-		// Initialize empty bitset in Redis
 		return s.SaveToRedis()
 	}
 	s.bitset.UnmarshalBinary(data)
@@ -58,7 +70,6 @@ func (s *Server) LoadFromRedis() error {
 }
 
 func (s *Server) SaveToRedis() error {
-	// Save bitset to Redis
 	data, _ := s.bitset.MarshalBinary()
 	return s.redisClient.Set(context.Background(), "bitset", data, 0).Err()
 }
@@ -68,23 +79,34 @@ func (s *Server) UpdateBit(index uint, value bool) error {
 		return fmt.Errorf("index out of range: %d", index)
 	}
 
+	s.mu.Lock()
 	s.bitset.SetTo(index, value)
+	s.mu.Unlock()
+
 	err := s.SaveToRedis()
 	if err != nil {
 		return err
 	}
-	s.BroadcastUpdate(index, value)
+
+	s.updates <- Update{Index: index, Value: value}
 	return nil
 }
 
-func (s *Server) BroadcastUpdate(index uint, value bool) {
-	message := fmt.Sprintf("%d:%t", index, value)
-	for client := range s.clients {
-		client.WriteMessage(websocket.TextMessage, []byte(message))
+func (s *Server) BroadcastUpdates() {
+	for update := range s.updates {
+		message := fmt.Sprintf("%d:%t", update.Index, update.Value)
+		s.mu.RLock()
+		for _, ch := range s.clients {
+			select {
+			case ch <- message:
+			default:
+				// If the channel is full, skip this client
+			}
+		}
+		s.mu.RUnlock()
 	}
 }
 
-// WebSocket handler
 func (s *Server) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -93,17 +115,34 @@ func (s *Server) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.Close()
 
-	s.clients[conn] = true
-	defer delete(s.clients, conn)
+	messageChan := make(chan string, 10)
+	s.mu.Lock()
+	s.clients[conn] = messageChan
+	s.mu.Unlock()
 
-	// Handle incoming messages
+	defer func() {
+		s.mu.Lock()
+		delete(s.clients, conn)
+		close(messageChan)
+		s.mu.Unlock()
+	}()
+
+	go func() {
+		for message := range messageChan {
+			err := conn.WriteMessage(websocket.TextMessage, []byte(message))
+			if err != nil {
+				log.Println("Error writing to WebSocket:", err)
+				return
+			}
+		}
+	}()
+
 	for {
 		_, message, err := conn.ReadMessage()
 		if err != nil {
 			break
 		}
-		// Parse message and update bit
-		// Format: "index:value"
+
 		parts := strings.Split(string(message), ":")
 		if len(parts) != 2 {
 			log.Println("Invalid message format")
@@ -138,26 +177,20 @@ func main() {
 		log.Fatal("Failed to load data from Redis:", err)
 	}
 
+	go server.BroadcastUpdates()
+
 	http.HandleFunc("/ws", server.HandleWebSocket)
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		// allow CORS
+	http.HandleFunc("/api", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		// serve data here
 		err = server.LoadFromRedis()
 		if err != nil {
 			log.Println("Failed to load data from Redis:", err)
 			return
 		}
 
-		var bytes = server.bitset.Bytes()
-		// Convert this to booleans
-
-		// this works: turning into a slice of booleans on BE
-		// length := server.bitset.Len()
-		// boolArray := make([]bool, length)
-		// for i := uint(0); i < length; i++ {
-		//     boolArray[i] = server.bitset.Test(i)
-		// }
+		server.mu.RLock()
+		bytes := server.bitset.Bytes()
+		server.mu.RUnlock()
 
 		byteSlice := make([]byte, len(bytes)*8)
 		for i, word := range bytes {
@@ -175,3 +208,4 @@ func main() {
 		log.Fatal("ListenAndServe: ", err)
 	}
 }
+

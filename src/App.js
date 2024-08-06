@@ -8,11 +8,11 @@ const totalRows = Math.ceil(rowCount / checkboxesPerRow); // Total number of row
 const rowHeight = 40; // Height of each row in pixels
 
 const App = () => {
-  const ws = useMemo(() => new WebSocket('ws://localhost:8080/ws'), []);
+  const ws = useMemo(() => new WebSocket(`ws://${window.location.hostname}/ws`), []);
 
   const [checkboxes, setCheckboxes] = useState(Array(rowCount).fill(false));
   useEffect(() => {
-    fetch('http://localhost:8080/')
+    fetch('/api')
         .then((response) => response.json())
         .then((data) => {
           // convert the data to an array of booleans
