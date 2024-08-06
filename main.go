@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -92,14 +94,7 @@ func (s *Server) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	defer conn.Close()
 
 	s.clients[conn] = true
-
-	// Send initial state
-	bools := make([]bool, TotalBits)
-	for i := uint(0); i < TotalBits; i++ {
-		bools[i] = s.bitset.Test(i)
-	}
-	jsonData, _ := json.Marshal(bools)
-	conn.WriteMessage(websocket.TextMessage, jsonData)
+	defer delete(s.clients, conn)
 
 	// Handle incoming messages
 	for {
@@ -154,15 +149,24 @@ func main() {
 			return
 		}
 
-		// turn data into an array of 0s and 1s
-		// this is a bitset, so we need to know the total number of bits
-		var bools []bool
-		for i := uint(0); i < TotalBits; i++ {
-			bools = append(bools, server.bitset.Test(i))
+		var bytes = server.bitset.Bytes()
+		// Convert this to booleans
+
+		// this works: turning into a slice of booleans on BE
+		// length := server.bitset.Len()
+		// boolArray := make([]bool, length)
+		// for i := uint(0); i < length; i++ {
+		//     boolArray[i] = server.bitset.Test(i)
+		// }
+
+		byteSlice := make([]byte, len(bytes)*8)
+		for i, word := range bytes {
+			binary.LittleEndian.PutUint64(byteSlice[i*8:], word)
 		}
+		encoded := base64.StdEncoding.EncodeToString(byteSlice)
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(bools)
+		json.NewEncoder(w).Encode(map[string]string{"bitset": encoded})
 	})
 
 	log.Println("Server starting on :8080")

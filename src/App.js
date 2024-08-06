@@ -8,11 +8,24 @@ const totalRows = Math.ceil(rowCount / checkboxesPerRow); // Total number of row
 const rowHeight = 40; // Height of each row in pixels
 
 const App = () => {
-  // const ws = new WebSocket('ws://localhost:8080/ws');
-  // wrap ws in useMemo
   const ws = useMemo(() => new WebSocket('ws://localhost:8080/ws'), []);
 
   const [checkboxes, setCheckboxes] = useState(Array(rowCount).fill(false));
+  useEffect(() => {
+    fetch('http://localhost:8080/')
+        .then((response) => response.json())
+        .then((data) => {
+          // convert the data to an array of booleans
+          // because right now we're receiving an array of bytes
+          const uint8Array = decodeBitset(data["bitset"]);
+          const boolArray = bitsetToBooleanArray(uint8Array);
+
+          setCheckboxes(boolArray);
+        })
+        .catch((error) => {
+          console.error('Error:', error);
+        })
+  }, []);
 
   // Handler to toggle checkbox state
   const handleCheckboxChange = useCallback((index) => {
@@ -31,16 +44,14 @@ const App = () => {
   useEffect(() => {
     ws.onmessage = (event) => {
       try {
-        const arr = JSON.parse(event.data);
-        setCheckboxes(arr || []);
-      } catch (error) {
-        // if error is thrown while parsing, it's probably not a JSON string
         const res = event.data.split(":")
         setCheckboxes((prev) => {
           const newCheckboxes = [...prev];
           newCheckboxes[res[0]] = res[1] === 'true';
           return newCheckboxes;
         });
+      } catch (error) {
+        console.error('Error parsing message:', error);
       }
     };
 
@@ -81,6 +92,26 @@ const App = () => {
         </div>
     );
   };
+
+  const decodeBitset = (encoded) => {
+    const bytes = atob(encoded);
+    const uint8Array = new Uint8Array(bytes.length);
+    for (let i = 0; i < bytes.length; i++) {
+      uint8Array[i] = bytes.charCodeAt(i);
+    }
+    return uint8Array;
+  };
+
+  const bitsetToBooleanArray = (uint8Array) => {
+    const boolArray = [];
+    uint8Array.forEach(byte => {
+      for (let i = 0; i < 8; i++) {
+        boolArray.push((byte & (1 << i)) !== 0);
+      }
+    });
+    return boolArray;
+  };
+
 
   // create a wrapper inside to make it scrollable and inside
   return (
