@@ -4,7 +4,7 @@ import './App.css';
 import { Header } from "./components/Header/Header";
 /* global BigInt */
 
-const rowCount = 1000000; // Number of checkboxes
+const rowCount = 30000000; // Number of checkboxes
 const checkboxesPerRow = 30; // Number of checkboxes per row
 const totalRows = Math.ceil(rowCount / checkboxesPerRow); // Total number of rows
 const rowHeight = 50; // Height of each row in pixels
@@ -49,17 +49,15 @@ const decodeRLE = (encoded) => {
 
 
 const App = () => {
-  const ws = useMemo(() => new WebSocket(`ws://${window.location.hostname}/ws`), []);
+  const ws = useMemo(() => new WebSocket(`ws://localhost:8080/ws`), []);
 
   const [checkboxes, setCheckboxes] = useState(Array(rowCount).fill(false));
   useEffect(() => {
-    fetch('/api')
+    fetch('http://localhost:8080/api')
         .then((response) => response.json())
         .then((data) => {
           const uint8Array = decodeRLE(data["bitsetRLE"]);
-          const boolArray = bitsetToBooleanArray(uint8Array);
-
-          setCheckboxes(boolArray);
+          setCheckboxes(bitsetToBooleanArray(uint8Array));
         })
         .catch((error) => {
           console.error('Error:', error);
