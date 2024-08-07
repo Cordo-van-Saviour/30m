@@ -1,4 +1,4 @@
-module Cordo-van-Saviour/1m
+module 1m
 
 go 1.20
 

@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 
+	"1m/rle"
+
 	"github.com/bits-and-blooms/bitset"
 	"github.com/gorilla/websocket"
 	"github.com/redis/go-redis/v9"
@@ -192,14 +194,14 @@ func main() {
 		bytes := server.bitset.Bytes()
 		server.mu.RUnlock()
 
-		byteSlice := make([]byte, len(bytes)*8)
-		for i, word := range bytes {
-			binary.LittleEndian.PutUint64(byteSlice[i*8:], word)
-		}
-		encoded := base64.StdEncoding.EncodeToString(byteSlice)
+		// encoded := encodeToBase64(bytes)
+		encodedRLE := rleEncodeToBase64(bytes)
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"bitset": encoded})
+		json.NewEncoder(w).Encode(map[string]string{
+			// "bitset": encoded,
+			"bitsetRLE": encodedRLE,
+		})
 	})
 
 	log.Println("Server starting on :8080")
@@ -209,3 +211,21 @@ func main() {
 	}
 }
 
+func rleEncodeToBase64(bytes []uint64) string {
+	uint64Slice := make([]uint64, len(bytes))
+	for i, word := range bytes {
+		uint64Slice[i] = word
+	}
+	rleEncoded := rle.EncodeUint64(uint64Slice)
+	encodedRLE := base64.StdEncoding.EncodeToString(rleEncoded)
+	return encodedRLE
+}
+
+func encodeToBase64(bytes []uint64) string {
+	byteSlice := make([]byte, len(bytes)*8)
+	for i, word := range bytes {
+		binary.LittleEndian.PutUint64(byteSlice[i*8:], word)
+	}
+	encoded := base64.StdEncoding.EncodeToString(byteSlice)
+	return encoded
+}

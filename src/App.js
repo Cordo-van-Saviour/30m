@@ -2,11 +2,51 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { AutoSizer, List } from 'react-virtualized';
 import './App.css';
 import { Header } from "./components/Header/Header";
+/* global BigInt */
 
 const rowCount = 1000000; // Number of checkboxes
 const checkboxesPerRow = 30; // Number of checkboxes per row
 const totalRows = Math.ceil(rowCount / checkboxesPerRow); // Total number of rows
 const rowHeight = 50; // Height of each row in pixels
+
+const decodeRLE = (encoded) => {
+  const bytes = atob(encoded);
+  const uint8Array = new Uint8Array(bytes.length);
+  for (let i = 0; i < bytes.length; i++) {
+    uint8Array[i] = bytes.charCodeAt(i);
+  }
+
+  const result = [];
+  let i = 0;
+  while (i < uint8Array.length) {
+    let value = 0n;
+    let shift = 0n;
+    let byte;
+    do {
+      byte = uint8Array[i++];
+      value |= BigInt(byte & 0x7F) << shift;
+      shift += 7n;
+    } while (byte & 0x80);
+
+    let run = 0n;
+    shift = 0n;
+    do {
+      byte = uint8Array[i++];
+      run |= BigInt(byte & 0x7F) << shift;
+      shift += 7n;
+    } while (byte & 0x80);
+
+    // Convert the 64-bit integer to 8 bytes
+    for (let j = 0; j < Number(run); j++) {
+      for (let k = 0n; k < 64n; k += 8n) {
+        result.push(Number((value >> k) & 0xFFn));
+      }
+    }
+  }
+
+  return new Uint8Array(result);
+};
+
 
 const App = () => {
   const ws = useMemo(() => new WebSocket(`ws://${window.location.hostname}/ws`), []);
@@ -16,9 +56,7 @@ const App = () => {
     fetch('/api')
         .then((response) => response.json())
         .then((data) => {
-          // convert the data to an array of booleans
-          // because right now we're receiving an array of bytes
-          const uint8Array = decodeBitset(data["bitset"]);
+          const uint8Array = decodeRLE(data["bitsetRLE"]);
           const boolArray = bitsetToBooleanArray(uint8Array);
 
           setCheckboxes(boolArray);
@@ -65,7 +103,6 @@ const App = () => {
     }
   }, [checkboxes, ws]);
 
-
   const rowRenderer = ({key, index, style}) => {
     const start = index * checkboxesPerRow;
     const end = Math.min(start + checkboxesPerRow, rowCount);
@@ -93,16 +130,7 @@ const App = () => {
         </div>
     );
   };
-
-  const decodeBitset = (encoded) => {
-    const bytes = atob(encoded);
-    const uint8Array = new Uint8Array(bytes.length);
-    for (let i = 0; i < bytes.length; i++) {
-      uint8Array[i] = bytes.charCodeAt(i);
-    }
-    return uint8Array;
-  };
-
+  
   const bitsetToBooleanArray = (uint8Array) => {
     const boolArray = [];
     uint8Array.forEach(byte => {
