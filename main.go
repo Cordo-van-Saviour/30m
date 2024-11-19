@@ -1,21 +1,26 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"image"
+	"image/color"
 	"log"
+	"math"
 	"net/http"
 	"os"
 	"strconv"
 	"strings"
 	"sync"
 
-	"1m/rle"
+	"1b/rle"
 
 	"github.com/bits-and-blooms/bitset"
+	"github.com/chai2010/webp"
 	"github.com/gorilla/websocket"
 	"github.com/redis/go-redis/v9"
 )
@@ -26,7 +31,7 @@ var upgrader = websocket.Upgrader{
 	},
 }
 
-const TotalBits = 1000000
+const TotalBits = 1_000_000_000
 
 type Server struct {
 	bitset      *bitset.BitSet
@@ -44,7 +49,7 @@ type Update struct {
 func NewServer() *Server {
 	redisAddr := os.Getenv("REDIS_URL")
 	if redisAddr == "" {
-		redisAddr = "redis:6379" // Default to the service name if env var is not set
+		redisAddr = "localhost:6379" // Default to the service name if env var is not set
 	}
 
 	redisClient := redis.NewClient(&redis.Options{
@@ -181,6 +186,7 @@ func main() {
 
 	go server.BroadcastUpdates()
 
+	http.HandleFunc("/image", server.HandleImageAPI)
 	http.HandleFunc("/ws", server.HandleWebSocket)
 	http.HandleFunc("/api", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -194,13 +200,14 @@ func main() {
 		bytes := server.bitset.Bytes()
 		server.mu.RUnlock()
 
-		// encoded := encodeToBase64(bytes)
-		encodedRLE := rleEncodeToBase64(bytes)
+		// encoded1 := encodeToBase64(bytes)
+		rleUint64 := rleEncodeToUint64(bytes)
+		encoded := base64.StdEncoding.EncodeToString(rleUint64)
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{
-			// "bitset": encoded,
-			"bitsetRLE": encodedRLE,
+			// "base64":    encoded1,
+			"bitsetRLE": encoded,
 		})
 	})
 
@@ -211,14 +218,22 @@ func main() {
 	}
 }
 
-func rleEncodeToBase64(bytes []uint64) string {
+func rleEncodeToUint64(bytes []uint64) []byte {
 	uint64Slice := make([]uint64, len(bytes))
 	for i, word := range bytes {
 		uint64Slice[i] = word
 	}
 	rleEncoded := rle.EncodeUint64(uint64Slice)
-	encodedRLE := base64.StdEncoding.EncodeToString(rleEncoded)
-	return encodedRLE
+	return rleEncoded
+}
+
+func rleDecodeFromUint64(rleEncoded []byte) []uint64 {
+	rleDecoded, err := rle.DecodeUint64(rleEncoded)
+	if err != nil {
+		log.Fatal("Error occured while decoding")
+	}
+
+	return rleDecoded
 }
 
 func encodeToBase64(bytes []uint64) string {
@@ -228,4 +243,124 @@ func encodeToBase64(bytes []uint64) string {
 	}
 	encoded := base64.StdEncoding.EncodeToString(byteSlice)
 	return encoded
+}
+
+func (s *Server) HandleImageAPI(w http.ResponseWriter, r *http.Request) {
+	s.mu.RLock()
+	webpData, err := EncodeToWebP(s.bitset)
+	s.mu.RUnlock()
+
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "image/webp")
+	w.Write(webpData)
+}
+
+func EncodeToWebP(bs *bitset.BitSet) ([]byte, error) {
+	totalBits := int(bs.Len())
+	bitsPerPixel := 24
+	totalPixels := (totalBits + bitsPerPixel - 1) / bitsPerPixel
+	width := int(math.Sqrt(float64(totalPixels)))
+	height := (totalPixels + width - 1) / width
+
+	img := image.NewRGBA(image.Rect(0, 0, width, height))
+
+	pixelIndex := 0
+	for bitIndex := uint(0); bitIndex < bs.Len(); bitIndex += 24 {
+		if pixelIndex >= width*height {
+			break
+		}
+
+		r := uint8(0)
+		g := uint8(0)
+		b := uint8(0)
+
+		// Red channel
+		for i := uint(0); i < 8 && (bitIndex+i) < bs.Len(); i++ {
+			if bs.Test(bitIndex + i) {
+				r |= 1 << i
+			}
+		}
+
+		// Green channel
+		for i := uint(0); i < 8 && (bitIndex+8+i) < bs.Len(); i++ {
+			if bs.Test(bitIndex + 8 + i) {
+				g |= 1 << i
+			}
+		}
+
+		// Blue channel
+		for i := uint(0); i < 8 && (bitIndex+16+i) < bs.Len(); i++ {
+			if bs.Test(bitIndex + 16 + i) {
+				b |= 1 << i
+			}
+		}
+
+		x := pixelIndex % width
+		y := pixelIndex / width
+		img.Set(x, y, color.RGBA{r, g, b, 255})
+		pixelIndex++
+	}
+
+	var buf bytes.Buffer
+	options := &webp.Options{
+		Lossless: true,
+		Quality:  100,
+	}
+	if err := webp.Encode(&buf, img, options); err != nil {
+		return nil, err
+	}
+
+	return buf.Bytes(), nil
+}
+
+func DecodeFromWebP(data []byte) (*bitset.BitSet, error) {
+	img, err := webp.Decode(bytes.NewReader(data))
+	if err != nil {
+		return nil, err
+	}
+
+	bounds := img.Bounds()
+	width := bounds.Max.X
+	height := bounds.Max.Y
+	bs := bitset.New(uint(width * height * 24))
+
+	for y := 0; y < height; y++ {
+		for x := 0; x < width; x++ {
+			pixelIndex := y*width + x
+			r, g, b, _ := img.At(x, y).RGBA()
+
+			r8 := uint8(r >> 8)
+			g8 := uint8(g >> 8)
+			b8 := uint8(b >> 8)
+
+			baseIndex := uint(pixelIndex * 24)
+
+			// Red channel
+			for i := uint(0); i < 8; i++ {
+				if r8&(1<<i) != 0 {
+					bs.Set(baseIndex + i)
+				}
+			}
+
+			// Green channel
+			for i := uint(0); i < 8; i++ {
+				if g8&(1<<i) != 0 {
+					bs.Set(baseIndex + 8 + i)
+				}
+			}
+
+			// Blue channel
+			for i := uint(0); i < 8; i++ {
+				if b8&(1<<i) != 0 {
+					bs.Set(baseIndex + 16 + i)
+				}
+			}
+		}
+	}
+
+	return bs, nil
 }

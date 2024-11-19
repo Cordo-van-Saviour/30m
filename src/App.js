@@ -9,6 +9,7 @@ const checkboxesPerRow = 30; // Number of checkboxes per row
 const totalRows = Math.ceil(rowCount / checkboxesPerRow); // Total number of rows
 const rowHeight = 50; // Height of each row in pixels
 
+// https://en.wikipedia.org/wiki/Run-length_encoding Decoder imlementation
 const decodeRLE = (encoded) => {
   const bytes = atob(encoded);
   const uint8Array = new Uint8Array(bytes.length);
@@ -49,11 +50,11 @@ const decodeRLE = (encoded) => {
 
 
 const App = () => {
-  const ws = useMemo(() => new WebSocket(`ws://localhost:8080/ws`), []);
+  const ws = useMemo(() => new WebSocket(`ws://127.0.0.1:8080/ws`), []);
 
   const [checkboxes, setCheckboxes] = useState(Array(rowCount).fill(false));
   useEffect(() => {
-    fetch('http://localhost:8080/api')
+    fetch('http://127.0.0.1:8080/api')
         .then((response) => response.json())
         .then((data) => {
           const uint8Array = decodeRLE(data["bitsetRLE"]);
