@@ -1,4 +1,4 @@
-module 1b
+module 30m
 
 go 1.20
 

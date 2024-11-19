@@ -1,70 +1,113 @@
-# Getting Started with Create React App
+# 30m - Public Checkbox Application
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+30m is an example application designed to showcase 30 million public checkboxes that can be toggled in real-time. The project focuses on optimization and low-level bit manipulation, leveraging a bitset to efficiently store and manipulate the state of a large number of checkboxes. This repository contains both the backend written in Go and the frontend implemented with React.
 
-## Available Scripts
+## Features
 
-In the project directory, you can run:
+- **Real-time Updates**: Utilizes WebSockets for real-time communication between the server and clients, ensuring that checkbox states are synchronized across all connected users.
+- **Optimized Data Storage**: Employs bit manipulation techniques to manage checkbox states efficiently with a bitset, reducing memory usage considerably.
+- **Run-Length Encoding**: Implements RLE (Run-Length Encoding) for compact storage of checkbox states when transmitting data to the client.
+- **Image Rendering**: Converts the bitset into a WebP image format, allowing for easy visualization of the checkbox states.
+  
+## Technologies Used
 
-### `npm start`
+- **Backend**: Go, gorilla/websocket, Redis, bits-and-blooms/bitset, chai2010/webp.
+- **Frontend**: React, react-virtualized (for efficient rendering of large lists).
+  
+## Getting Started
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+### Prerequisites
 
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
+- Go (1.18 or later)
+- Node.js (for running the React frontend)
+- Redis server (for storing the bitset)
+- Installation of required Go packages (see next section)
 
-### `npm test`
+### Installation
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+1. **Clone the Repository**:
 
-### `npm run build`
+   ```bash
+   git clone https://github.com/yourusername/30m.git
+   cd 30m
+   ```
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+2. **Setup Backend**:
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+   - Navigate to the backend directory, and install dependencies:
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+   ```bash
+   go mod tidy
+   ```
 
-### `npm run eject`
+   - Ensure Redis is running on your machine or set the `REDIS_URL` environment variable to your Redis service.
+   - Build and run the server:
 
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
+   ```bash
+   go run main.go
+   ```
 
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+   The server will start on `http://127.0.0.1:8080`.
 
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
+3. **Setup Frontend**:
 
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
+   - Navigate to the frontend directory:
 
-## Learn More
+   ```bash
+   cd frontend
+   ```
 
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
+   - Install the necessary packages:
 
-To learn React, check out the [React documentation](https://reactjs.org/).
+   ```bash
+   npm install
+   ```
 
-### Code Splitting
+   - Start the React development server:
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
+   ```bash
+   npm start
+   ```
 
-### Analyzing the Bundle Size
+   The frontend should now be accessible at `http://localhost:3000`.
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
+## Usage
 
-### Making a Progressive Web App
+1. Open your web browser and navigate to the frontend application.
+2. You will see a grid of checkboxes. Click on any checkbox to toggle its state.
+3. All changes will be reflected in real-time across all connected clients.
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
+## Directory Structure
 
-### Advanced Configuration
+```
+30m/
+|── main.go                 # Go backend for managing bitsets and WebSocket connections
+├── rle/                
+│   ├── rle.go              # Run-Length Encoding implementation
+│   └── ...
+├── frontend/               # React frontend for displaying checkboxes
+│   ├── src/
+│   │   ├── App.js          # Main application component
+│   │   ├── components/     # Reusable components
+│   │   └── ...
+├── go.mod                  # Go module file
+└── package.json            # NPM package file for React app
+```
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
+## Optimization Strategies
 
-### Deployment
+- **Bit Manipulation**: The application utilizes a `bitset` to store checkbox states efficiently, allowing for compact data representation.
+- **Run-Length Encoding**: RLE is applied for reducing the data size during transmission, optimizing network bandwidth usage.
+- **Virtualized List**: The use of `react-virtualized` enhances rendering performance, allowing the application to handle millions of checkboxes smoothly.
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
+## Contributing
 
-### `npm run build` fails to minify
+Contributions are welcome! Feel free to fork the repository, create a new branch, and submit a pull request.
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+---
+
+For any questions or issues, please feel free to create an issue on the repository. Happy coding!

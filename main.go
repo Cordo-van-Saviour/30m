@@ -17,7 +17,7 @@ import (
 	"strings"
 	"sync"
 
-	"1b/rle"
+	"30m/rle"
 
 	"github.com/bits-and-blooms/bitset"
 	"github.com/chai2010/webp"
